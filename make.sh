@@ -8,7 +8,7 @@ case "$(uname -a)" in # automatically detect operating system and X11 support on
 	*       ) target=Linux                                                       ;;
 esac
 
-#target=Linux-X11 # manually set to compile on Linux with X11 graphics
+target=Linux-X11 # manually set to compile on Linux with X11 graphics
 #target=Linux     # manually set to compile on Linux (without X11)
 #target=macOS     # manually set to compile on macOS (without X11)
 #target=Android   # manually set to compile on Android (without X11)

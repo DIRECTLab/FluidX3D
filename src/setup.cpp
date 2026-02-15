@@ -2,61 +2,61 @@
 
 
 
-#ifdef BENCHMARK
-#include "info.hpp"
-void main_setup() { // benchmark; required extensions in defines.hpp: BENCHMARK, optionally FP16S or FP16C
-	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
-	uint mlups = 0u; {
+//#ifdef BENCHMARK
+//#include "info.hpp"
+//void main_setup() { // benchmark; required extensions in defines.hpp: BENCHMARK, optionally FP16S or FP16C
+//	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
+//	uint mlups = 0u; {
+//
+//		//LBM lbm( 32u,  32u,  32u, 1.0f);
+//		//LBM lbm( 64u,  64u,  64u, 1.0f);
+//		//LBM lbm(128u, 128u, 128u, 1.0f);
+//		LBM lbm(256u, 256u, 256u, 1.0f); // default
+//		//LBM lbm(384u, 384u, 384u, 1.0f);
+//		//LBM lbm(512u, 512u, 512u, 1.0f);
+//
+//		//const uint memory = 1488u; // memory occupation in MB (for multi-GPU benchmarks: make this close to as large as the GPU's VRAM capacity)
+//		//const uint3 lbm_N = (resolution(float3(1.0f, 1.0f, 1.0f), memory)/4u)*4u; // input: simulation box aspect ratio and VRAM occupation in MB, output: grid resolution
+//		//LBM lbm(1u*lbm_N.x, 1u*lbm_N.y, 1u*lbm_N.z, 1u, 1u, 1u, 1.0f); // 1 GPU
+//		//LBM lbm(2u*lbm_N.x, 1u*lbm_N.y, 1u*lbm_N.z, 2u, 1u, 1u, 1.0f); // 2 GPUs
+//		//LBM lbm(2u*lbm_N.x, 2u*lbm_N.y, 1u*lbm_N.z, 2u, 2u, 1u, 1.0f); // 4 GPUs
+//		//LBM lbm(2u*lbm_N.x, 2u*lbm_N.y, 2u*lbm_N.z, 2u, 2u, 2u, 1.0f); // 8 GPUs
+//
+//		// #########################################################################################################################################################################################
+//		for(uint i=0u; i<1000u; i++) {
+//			lbm.run(10u, 1000u*10u);
+//			mlups = max(mlups, to_uint((double)lbm.get_N()*1E-6/info.runtime_lbm_timestep_smooth));
+//		}
+//	} // make lbm object go out of scope to free its memory
+//	print_info("Peak MLUPs/s = "+to_string(mlups));
+//#if defined(_WIN32)
+//	wait();
+//#endif // Windows
+//} /**/
+//#endif // BENCHMARK
 
-		//LBM lbm( 32u,  32u,  32u, 1.0f);
-		//LBM lbm( 64u,  64u,  64u, 1.0f);
-		//LBM lbm(128u, 128u, 128u, 1.0f);
-		LBM lbm(256u, 256u, 256u, 1.0f); // default
-		//LBM lbm(384u, 384u, 384u, 1.0f);
-		//LBM lbm(512u, 512u, 512u, 1.0f);
-
-		//const uint memory = 1488u; // memory occupation in MB (for multi-GPU benchmarks: make this close to as large as the GPU's VRAM capacity)
-		//const uint3 lbm_N = (resolution(float3(1.0f, 1.0f, 1.0f), memory)/4u)*4u; // input: simulation box aspect ratio and VRAM occupation in MB, output: grid resolution
-		//LBM lbm(1u*lbm_N.x, 1u*lbm_N.y, 1u*lbm_N.z, 1u, 1u, 1u, 1.0f); // 1 GPU
-		//LBM lbm(2u*lbm_N.x, 1u*lbm_N.y, 1u*lbm_N.z, 2u, 1u, 1u, 1.0f); // 2 GPUs
-		//LBM lbm(2u*lbm_N.x, 2u*lbm_N.y, 1u*lbm_N.z, 2u, 2u, 1u, 1.0f); // 4 GPUs
-		//LBM lbm(2u*lbm_N.x, 2u*lbm_N.y, 2u*lbm_N.z, 2u, 2u, 2u, 1.0f); // 8 GPUs
-
-		// #########################################################################################################################################################################################
-		for(uint i=0u; i<1000u; i++) {
-			lbm.run(10u, 1000u*10u);
-			mlups = max(mlups, to_uint((double)lbm.get_N()*1E-6/info.runtime_lbm_timestep_smooth));
-		}
-	} // make lbm object go out of scope to free its memory
-	print_info("Peak MLUPs/s = "+to_string(mlups));
-#if defined(_WIN32)
-	wait();
-#endif // Windows
-} /**/
-#endif // BENCHMARK
 
 
-
-/*void main_setup() { // 3D Taylor-Green vortices; required extensions in defines.hpp: INTERACTIVE_GRAPHICS
-	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
-	LBM lbm(128u, 128u, 128u, 1u, 1u, 1u, 0.01f);
-	// ###################################################################################### define geometry ######################################################################################
-	const uint Nx=lbm.get_Nx(), Ny=lbm.get_Ny(), Nz=lbm.get_Nz(); parallel_for(lbm.get_N(), [&](ulong n) { uint x=0u, y=0u, z=0u; lbm.coordinates(n, x, y, z);
-		const float A = 0.25f;
-		const uint periodicity = 1u;
-		const float a=(float)Nx/(float)periodicity, b=(float)Ny/(float)periodicity, c=(float)Nz/(float)periodicity;
-		const float fx = (float)x+0.5f-0.5f*(float)Nx;
-		const float fy = (float)y+0.5f-0.5f*(float)Ny;
-		const float fz = (float)z+0.5f-0.5f*(float)Nz;
-		lbm.u.x[n] =  A*cosf(2.0f*pif*fx/a)*sinf(2.0f*pif*fy/b)*sinf(2.0f*pif*fz/c);
-		lbm.u.y[n] = -A*sinf(2.0f*pif*fx/a)*cosf(2.0f*pif*fy/b)*sinf(2.0f*pif*fz/c);
-		lbm.u.z[n] =  A*sinf(2.0f*pif*fx/a)*sinf(2.0f*pif*fy/b)*cosf(2.0f*pif*fz/c);
-		lbm.rho[n] = 1.0f-sq(A)*3.0f/4.0f*(cosf(4.0f*pif*fx/a)+cosf(4.0f*pif*fy/b));
-	}); // ####################################################################### run simulation, export images and data ##########################################################################
-	lbm.graphics.visualization_modes = VIS_STREAMLINES;
-	lbm.run();
-	//lbm.run(1000u); lbm.u.read_from_device(); println(lbm.u.x[lbm.index(Nx/2u, Ny/2u, Nz/2u)]); wait(); // test for binary identity
-} /**/
+//void main_setup() { // 3D Taylor-Green vortices; required extensions in defines.hpp: INTERACTIVE_GRAPHICS
+//	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
+//	LBM lbm(128u, 128u, 128u, 1u, 1u, 1u, 0.01f);
+//	// ###################################################################################### define geometry ######################################################################################
+//	const uint Nx=lbm.get_Nx(), Ny=lbm.get_Ny(), Nz=lbm.get_Nz(); parallel_for(lbm.get_N(), [&](ulong n) { uint x=0u, y=0u, z=0u; lbm.coordinates(n, x, y, z);
+//		const float A = 0.25f;
+//		const uint periodicity = 1u;
+//		const float a=(float)Nx/(float)periodicity, b=(float)Ny/(float)periodicity, c=(float)Nz/(float)periodicity;
+//		const float fx = (float)x+0.5f-0.5f*(float)Nx;
+//		const float fy = (float)y+0.5f-0.5f*(float)Ny;
+//		const float fz = (float)z+0.5f-0.5f*(float)Nz;
+//		lbm.u.x[n] =  A*cosf(2.0f*pif*fx/a)*sinf(2.0f*pif*fy/b)*sinf(2.0f*pif*fz/c);
+//		lbm.u.y[n] = -A*sinf(2.0f*pif*fx/a)*cosf(2.0f*pif*fy/b)*sinf(2.0f*pif*fz/c);
+//		lbm.u.z[n] =  A*sinf(2.0f*pif*fx/a)*sinf(2.0f*pif*fy/b)*cosf(2.0f*pif*fz/c);
+//		lbm.rho[n] = 1.0f-sq(A)*3.0f/4.0f*(cosf(4.0f*pif*fx/a)+cosf(4.0f*pif*fy/b));
+//	}); // ####################################################################### run simulation, export images and data ##########################################################################
+//	lbm.graphics.visualization_modes = VIS_STREAMLINES;
+//	lbm.run();
+//	//lbm.run(1000u); lbm.u.read_from_device(); println(lbm.u.x[lbm.index(Nx/2u, Ny/2u, Nz/2u)]); wait(); // test for binary identity
+//} /**/
 
 
 
@@ -314,6 +314,43 @@ void main_setup() { // benchmark; required extensions in defines.hpp: BENCHMARK,
 
 
 
+/*void main_setup() { // Font fluid dynamics; required extensions in defines.hpp: FP16C, EQUILIBRIUM_BOUNDARIES, SUBGRID, INTERACTIVE_GRAPHICS
+	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
+	const uint3 lbm_N = resolution(float3(1.0f, 1.5f, 1.0f/3.0f), 18000u); // input: simulation box aspect ratio and VRAM occupation in MB, output: grid resolution
+	const float Re = 10000000.0f;
+	const float u = 0.075f;
+	LBM lbm(lbm_N, units.nu_from_Re(Re, (float)lbm_N.x, u));
+	// ###################################################################################### define geometry ######################################################################################
+	// model: https://commonresearchmodel.larc.nasa.gov/high-lift-crm/high-lift-crm-geometry/assembled-geometry/, .stp file converted to .stl with https://imagetostl.com/convert/file/stp/to/stl
+	Mesh* mesh = read_stl("/home/chandler/code/FluidX3D/stl/penis.stl", lbm.size(), float3(0.0f), float3x3(float3(0, 0, 1), radians(90.0f)), 1.0f*lbm_N.x);
+	//half->translate(float3(-0.5f*(half->pmax.x-half->pmin.x), 0.0f, 0.0f));
+	//Mesh* mesh = new Mesh(2u*half->triangle_number, float3(0.0f));
+	//for(uint i=0u; i<half->triangle_number; i++) {
+	//	mesh->p0[i] = half->p0[i];
+	//	mesh->p1[i] = half->p1[i];
+	//	mesh->p2[i] = half->p2[i];
+	//}
+	//half->rotate(float3x3(float3(1, 0, 0), radians(180.0f))); // mirror-copy half
+	//for(uint i=0u; i<half->triangle_number; i++) {
+	//	mesh->p0[half->triangle_number+i] = -half->p0[i];
+	//	mesh->p1[half->triangle_number+i] = -half->p1[i];
+	//	mesh->p2[half->triangle_number+i] = -half->p2[i];
+	//}
+	//delete half;
+	mesh->find_bounds();
+	mesh->rotate(float3x3(float3(1, 0, 0), radians(-10.0f)));
+	mesh->translate(float3(0.0f, 0.0f, -0.5f*(mesh->pmin.z+mesh->pmax.z)));
+	mesh->translate(float3(0.0f, -0.5f*lbm.size().y+mesh->pmax.y+0.5f*(lbm.size().x-(mesh->pmax.x-mesh->pmin.x)), 0.0f));
+	mesh->translate(lbm.center());
+	lbm.voxelize_mesh_on_device(mesh);
+	const uint Nx=lbm.get_Nx(), Ny=lbm.get_Ny(), Nz=lbm.get_Nz(); parallel_for(lbm.get_N(), [&](ulong n) { uint x=0u, y=0u, z=0u; lbm.coordinates(n, x, y, z);
+		if(lbm.flags[n]!=TYPE_S) lbm.u.y[n] = u;
+		if(x==0u||x==Nx-1u||y==0u||y==Ny-1u||z==0u||z==Nz-1u) lbm.flags[n] = TYPE_E; // all non periodic
+	}); // ####################################################################### run simulation, export images and data ##########################################################################
+	lbm.graphics.visualization_modes = VIS_FLAG_SURFACE|VIS_Q_CRITERION;
+	lbm.run();
+} /**/
+
 /*void main_setup() { // NASA Common Research Model; required extensions in defines.hpp: FP16C, EQUILIBRIUM_BOUNDARIES, SUBGRID, INTERACTIVE_GRAPHICS
 	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
 	const uint3 lbm_N = resolution(float3(1.0f, 1.5f, 1.0f/3.0f), 2000u); // input: simulation box aspect ratio and VRAM occupation in MB, output: grid resolution
@@ -322,7 +359,7 @@ void main_setup() { // benchmark; required extensions in defines.hpp: BENCHMARK,
 	LBM lbm(lbm_N, units.nu_from_Re(Re, (float)lbm_N.x, u));
 	// ###################################################################################### define geometry ######################################################################################
 	// model: https://commonresearchmodel.larc.nasa.gov/high-lift-crm/high-lift-crm-geometry/assembled-geometry/, .stp file converted to .stl with https://imagetostl.com/convert/file/stp/to/stl
-	Mesh* half = read_stl(get_exe_path()+"../stl/crm-hl_reference_ldg.stl", lbm.size(), float3(0.0f), float3x3(float3(0, 0, 1), radians(90.0f)), 1.0f*lbm_N.x);
+	Mesh* half = read_stl("/home/chandler/code/FluidX3D/stl/CRM-HL_Reference_LDG_20230224.stl", lbm.size(), float3(0.0f), float3x3(float3(0, 0, 1), radians(90.0f)), 1.0f*lbm_N.x);
 	half->translate(float3(-0.5f*(half->pmax.x-half->pmin.x), 0.0f, 0.0f));
 	Mesh* mesh = new Mesh(2u*half->triangle_number, float3(0.0f));
 	for(uint i=0u; i<half->triangle_number; i++) {
@@ -628,6 +665,45 @@ void main_setup() { // benchmark; required extensions in defines.hpp: BENCHMARK,
 	lbm.run();
 #endif // GRAPHICS && !INTERACTIVE_GRAPHICS
 } /**/
+
+
+void main_setup() { // aerodynamics of the word cow; required extensions in defines.hpp: FP16S, EQUILIBRIUM_BOUNDARIES, SUBGRID, INTERACTIVE_GRAPHICS or GRAPHICS
+	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
+	const uint3 lbm_N = resolution(float3(1.0f, 2.0f, 1.0f), 1000u); // input: simulation box aspect ratio and VRAM occupation in MB, output: grid resolution
+	const float si_u = 1.0f;
+	const float si_length = 2.4f;
+	const float si_T = 10.0f;
+	const float si_nu=1.48E-5f, si_rho=1.225f;
+	const float lbm_length = 0.65f*(float)lbm_N.y;
+	const float lbm_u = 0.075f;
+	units.set_m_kg_s(lbm_length, lbm_u, 1.0f, si_length, si_u, si_rho);
+	const float lbm_nu = units.nu(si_nu);
+	const ulong lbm_T = units.t(si_T);
+	print_info("Re = "+to_string(to_uint(units.si_Re(si_length, si_u, si_nu))));
+	LBM lbm(lbm_N, lbm_nu);
+	// ###################################################################################### define geometry ######################################################################################
+	const float3x3 rotation = float3x3(float3(1, 0, 0), radians(90.0f))*float3x3(float3(0, 1, 0), radians(90.0f))*float3x3(float3(0, 0, 1), radians(0.0f));
+	Mesh* mesh = read_stl(get_exe_path()+"../stl/cow_text.stl", lbm.size(), lbm.center(), rotation, lbm_length); // https://www.thingiverse.com/thing:182114/files
+	//mesh->translate(float3(0.5f, 1.0f, 1.0f-mesh->pmin.z)); // move mesh forward a bit and to simulation box bottom, keep in mind 1 cell thick box boundaries
+	lbm.voxelize_mesh_on_device(mesh);
+	const uint Nx=lbm.get_Nx(), Ny=lbm.get_Ny(), Nz=lbm.get_Nz(); parallel_for(lbm.get_N(), [&](ulong n) { uint x=0u, y=0u, z=0u; lbm.coordinates(n, x, y, z);
+		if(z==0u) lbm.flags[n] = TYPE_S; // solid floor
+		if(lbm.flags[n]!=TYPE_S) lbm.u.y[n] = lbm_u; // initialize y-velocity everywhere except in solid cells
+		if(x==0u||x==Nx-1u||y==0u||y==Ny-1u||z==Nz-1u) lbm.flags[n] = TYPE_E; // all other simulation box boundaries are inflow/outflow
+	}); // ####################################################################### run simulation, export images and data ##########################################################################
+	lbm.graphics.visualization_modes = VIS_FLAG_SURFACE|VIS_Q_CRITERION;
+#if defined(GRAPHICS) && !defined(INTERACTIVE_GRAPHICS)
+	lbm.graphics.set_camera_centered(-40.0f, 20.0f, 78.0f, 1.25f);
+	lbm.run(0u, lbm_T); // initialize simulation
+	while(lbm.get_t()<=lbm_T) { // main simulation loop
+		if(lbm.graphics.next_frame(lbm_T, 10.0f)) lbm.graphics.write_frame();
+		lbm.run(1u, lbm_T);
+	}
+#else // GRAPHICS && !INTERACTIVE_GRAPHICS
+	lbm.run();
+#endif // GRAPHICS && !INTERACTIVE_GRAPHICS
+} /**/
+
 
 
 
