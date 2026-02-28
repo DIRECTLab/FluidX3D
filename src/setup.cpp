@@ -669,7 +669,7 @@
 
 void main_setup() { // aerodynamics of the word cow; required extensions in defines.hpp: FP16S, EQUILIBRIUM_BOUNDARIES, SUBGRID, INTERACTIVE_GRAPHICS or GRAPHICS
 	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
-	const uint3 lbm_N = resolution(float3(1.0f, 2.0f, 1.0f), 1000u); // input: simulation box aspect ratio and VRAM occupation in MB, output: grid resolution
+	const uint3 lbm_N = resolution(float3(1.0f, 2.0f, 1.0f), 10000u); // input: simulation box aspect ratio and VRAM occupation in MB, output: grid resolution
 	const float si_u = 1.0f;
 	const float si_length = 2.4f;
 	const float si_T = 10.0f;
@@ -683,8 +683,7 @@ void main_setup() { // aerodynamics of the word cow; required extensions in defi
 	LBM lbm(lbm_N, lbm_nu);
 	// ###################################################################################### define geometry ######################################################################################
 	const float3x3 rotation = float3x3(float3(1, 0, 0), radians(90.0f))*float3x3(float3(0, 1, 0), radians(90.0f))*float3x3(float3(0, 0, 1), radians(0.0f));
-	Mesh* mesh = read_stl(get_exe_path()+"../stl/cow_text.stl", lbm.size(), lbm.center(), rotation, lbm_length); // https://www.thingiverse.com/thing:182114/files
-	//mesh->translate(float3(0.5f, 1.0f, 1.0f-mesh->pmin.z)); // move mesh forward a bit and to simulation box bottom, keep in mind 1 cell thick box boundaries
+	Mesh* mesh = read_stl(get_exe_path()+"../stl/Hack-Regular.stl", lbm.size(), lbm.center(), rotation, lbm_length); // https://www.thingiverse.com/thing:182114/files
 	lbm.voxelize_mesh_on_device(mesh);
 	const uint Nx=lbm.get_Nx(), Ny=lbm.get_Ny(), Nz=lbm.get_Nz(); parallel_for(lbm.get_N(), [&](ulong n) { uint x=0u, y=0u, z=0u; lbm.coordinates(n, x, y, z);
 		if(z==0u) lbm.flags[n] = TYPE_S; // solid floor
