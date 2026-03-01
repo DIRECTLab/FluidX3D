@@ -1,5 +1,4 @@
 #include "setup.hpp"
-#include <iostream>
 
 
 extern std::vector<std::string> main_arguments;
@@ -32,7 +31,7 @@ static inline void parse_out_arguments() {
 void main_setup() { // aerodynamics of the word cow; required extensions in defines.hpp: FP16S, EQUILIBRIUM_BOUNDARIES, SUBGRID, FORCE_FIELD, INTERACTIVE_GRAPHICS or GRAPHICS
     parse_out_arguments();
 	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
-	const uint3 lbm_N = resolution(float3(1.0f, 2.0f, 1.0f), 18000u);
+	const uint3 lbm_N = resolution(float3(1.0f, 2.0f, 1.0f), 10000u);
 	const float si_u = 1.0f;
 	const float si_length = 2.4f;
 	const float si_T = 10.0f;
