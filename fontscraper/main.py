@@ -28,6 +28,14 @@ def parse_args():
     p.add_argument("--headless", action="store_true", help="Run Firefox headless")
     p.add_argument("--download-timeout", type=int, default=180, help="Seconds to wait for each STL download")
     p.add_argument("--render-sleep", type=float, default=0.4, help="Seconds to sleep after setting phrase")
+
+    # --- stability / memory controls ---
+    p.add_argument("--restart-every-fonts", type=int, default=25,
+                   help="Restart Firefox after this many fonts (0 = never)")
+    p.add_argument("--restart-every-downloads", type=int, default=200,
+                   help="Restart Firefox after this many downloads (0 = never)")
+    p.add_argument("--reload-every-phrases", type=int, default=10,
+                   help="Reload page after this many phrases for a font (0 = never)")
     return p.parse_args()
 
 
@@ -86,6 +94,13 @@ def make_driver(download_dir: Path, headless: bool) -> webdriver.Firefox:
     options.set_preference("browser.download.manager.showWhenStarting", False)
     options.set_preference("browser.download.alwaysOpenPanel", False)
 
+    # Reduce caching/memory pressure
+    options.set_preference("browser.cache.disk.enable", False)
+    options.set_preference("browser.cache.memory.enable", False)
+    options.set_preference("browser.cache.offline.enable", False)
+    options.set_preference("network.http.use-cache", False)
+    options.set_preference("media.memory_cache_max_size", 0)
+
     # STL downloads can come back under different types; include a few common ones
     options.set_preference(
         "browser.helperApps.neverAsk.saveToDisk",
@@ -107,6 +122,14 @@ def make_driver(download_dir: Path, headless: bool) -> webdriver.Firefox:
     return driver
 
 
+def restart_driver(driver, download_dir: Path, headless: bool) -> webdriver.Firefox:
+    try:
+        driver.quit()
+    except Exception:
+        pass
+    return make_driver(download_dir, headless)
+
+
 def wait_for_ui_ready(driver, timeout_s: int = 30):
     wait = WebDriverWait(driver, timeout_s)
     wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='file']")))
@@ -120,6 +143,13 @@ def upload_font(driver, font_path: Path, timeout_s: int = 30):
     file_input.send_keys(str(font_path.resolve()))
     # Let the app ingest the font and rerender
     time.sleep(0.8)
+
+
+def clear_file_input(driver):
+    driver.execute_script("""
+      const el = document.querySelector("input[type='file']");
+      if (el) el.value = "";
+    """)
 
 
 def set_phrase(driver, phrase: str, render_sleep: float):
@@ -137,6 +167,14 @@ def set_phrase(driver, phrase: str, render_sleep: float):
 
 def click_download(driver):
     driver.find_element(By.XPATH, "//button[contains(., 'download')]").click()
+
+
+def close_extra_tabs(driver):
+    # Defensive: ensure downloads don't open new tabs/windows
+    while len(driver.window_handles) > 1:
+        driver.switch_to.window(driver.window_handles[-1])
+        driver.close()
+    driver.switch_to.window(driver.window_handles[0])
 
 
 # -------------------------------------------------
@@ -159,12 +197,23 @@ def wait_for_new_download(download_dir: Path, before: set[Path], timeout_s: int 
 
     while time.time() < deadline:
         after = list_files(download_dir)
-        new = [p for p in (after - before) if p.is_file() and not is_partial(p)]
-        if not new:
-            time.sleep(0.2)
-            continue
 
-        candidate = max(new, key=lambda p: p.stat().st_mtime)
+        # New files (best case)
+        new = [p for p in (after - before) if p.is_file() and not is_partial(p)]
+        if new:
+            candidate = max(new, key=lambda p: p.stat().st_mtime)
+        else:
+            # Fallback: detect a file whose mtime increased (handles reused filenames)
+            candidates = [p for p in after if p.is_file() and not is_partial(p)]
+            if not candidates:
+                time.sleep(0.2)
+                continue
+            candidate = max(candidates, key=lambda p: p.stat().st_mtime)
+
+            # If candidate existed before and hasn't changed since 'before', keep waiting
+            if candidate in before:
+                # still may become new if overwritten; we'll rely on size stabilization
+                pass
 
         size = candidate.stat().st_size
         now = time.time()
@@ -213,21 +262,37 @@ def main():
 
     driver = make_driver(args.tmp, args.headless)
 
+    download_count = 0
+    font_count = 0
+
     try:
         for font_path in iter_ttf_fonts(args.fonts):
+            font_count += 1
+
+            # Periodic driver restart by font count
+            if args.restart_every_fonts and (font_count % args.restart_every_fonts == 0):
+                driver = restart_driver(driver, args.tmp, args.headless)
+
             try:
                 # Load once per font
                 driver.get(URL)
                 wait_for_ui_ready(driver)
                 upload_font(driver, font_path)
 
-                # Iterate phrases without reloading
-                for phrase in phrases:
+                # Iterate phrases, periodically reloading SPA state
+                for j, phrase in enumerate(phrases, start=1):
                     try:
+                        if args.reload_every_phrases and (j % args.reload_every_phrases == 0):
+                            # hard reset the SPA to drop accumulated JS state
+                            driver.get(URL)
+                            wait_for_ui_ready(driver)
+                            upload_font(driver, font_path)
+
                         set_phrase(driver, phrase, args.render_sleep)
 
                         before = list_files(args.tmp)
                         click_download(driver)
+                        close_extra_tabs(driver)
 
                         downloaded = wait_for_new_download(args.tmp, before, timeout_s=args.download_timeout)
 
@@ -236,14 +301,34 @@ def main():
 
                         print(f"[OK] {font_path.name} + '{phrase}' -> {final_path.name}")
 
+                        download_count += 1
+
+                        # Periodic driver restart by download count
+                        if args.restart_every_downloads and (download_count % args.restart_every_downloads == 0):
+                            driver = restart_driver(driver, args.tmp, args.headless)
+                            # Re-open and re-upload current font after restart
+                            driver.get(URL)
+                            wait_for_ui_ready(driver)
+                            upload_font(driver, font_path)
+
                     except Exception as e:
                         print(f"[ERROR] {font_path.name} + '{phrase}': {e}")
 
             except Exception as e:
                 print(f"[ERROR] Failed processing font {font_path}: {e}")
 
+            finally:
+                # Encourage releasing font blob references in the page
+                try:
+                    clear_file_input(driver)
+                except Exception:
+                    pass
+
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

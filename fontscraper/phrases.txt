@@ -3,3 +3,6 @@ Tmux is better than Zellij
 DIRECT Lab
 brad Mortensen
 Sigbovik
+It was as if some occult hand had...
+Fast
+Slow
