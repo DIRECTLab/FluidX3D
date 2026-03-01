@@ -1,9 +1,8 @@
 #include "setup.hpp"
+#include <iostream>
 
 
-
-#include <fstream>
-#include <string>
+extern std::vector<std::string> main_arguments;
 
 static inline void append_file(const std::string& path, const std::string& text) {
     std::ofstream out(path, std::ios::binary | std::ios::app);
@@ -11,7 +10,27 @@ static inline void append_file(const std::string& path, const std::string& text)
     out << text;
 }
 
+
+
+// ################################################################## parse positional arguments ###################################################################
+static inline void usage() {
+    std::cout << "FluidX3D (Modified for analysis of fonts to submit to SIGBOVIK 2026)" << std::endl;
+    std::cout << "Usage: $ ./make.sh [input .stl file (relative path)] [output folder (absolute path)]" << std::endl;
+    exit(0);
+}
+
+static std::string input_file;
+static std::string output_folder;
+static inline void parse_out_arguments() {
+    if (main_arguments.size() != 2) {
+        usage();
+    }
+    input_file = main_arguments[0];
+    output_folder = main_arguments[1];
+}
+
 void main_setup() { // aerodynamics of the word cow; required extensions in defines.hpp: FP16S, EQUILIBRIUM_BOUNDARIES, SUBGRID, FORCE_FIELD, INTERACTIVE_GRAPHICS or GRAPHICS
+    parse_out_arguments();
 	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
 	const uint3 lbm_N = resolution(float3(1.0f, 2.0f, 1.0f), 18000u);
 	const float si_u = 1.0f;
@@ -36,11 +55,11 @@ void main_setup() { // aerodynamics of the word cow; required extensions in defi
 		float3x3(float3(0, 1, 0), radians(90.0f)) *
 		float3x3(float3(0, 0, 1), radians(0.0f));
 
-	Mesh* mesh = read_stl(get_exe_path() + "../stl/AdwaitaSans-Italic__Sigbovik.stl", lbm.size(), lbm.center(), rotation, lbm_length);
+	Mesh* mesh = read_stl(input_file, lbm.size(), lbm.center(), rotation, lbm_length);
 	lbm.voxelize_mesh_on_device(mesh);
 
 	// Export mesh to VTK for ParaView (one-time)
-	lbm.write_mesh_to_vtk(mesh); // supported in FluidX3D :contentReference[oaicite:2]{index=2}
+	lbm.write_mesh_to_vtk(mesh, output_folder); // supported in FluidX3D :contentReference[oaicite:2]{index=2}
 
 	const uint Nx = lbm.get_Nx(), Ny = lbm.get_Ny(), Nz = lbm.get_Nz();
 	parallel_for(lbm.get_N(), [&](ulong n) {
@@ -63,18 +82,18 @@ void main_setup() { // aerodynamics of the word cow; required extensions in defi
     if (log_interval < 1u) log_interval = 1u;
 
 	// CSV header (force time series). Use write_file/append helpers if you prefer.
-	write_file(get_exe_path() + "forces.csv",
+	write_file(output_folder + "forces.csv",
 		"t_lbm,t_si,Fx_lbm,Fy_lbm,Fz_lbm,Fx_siN,Fy_siN,Fz_siN\n"
 	);
 
 #if defined(GRAPHICS) && !defined(INTERACTIVE_GRAPHICS)
     float cam = 1.0f * (float)lbm.get_Nx();
+    // camera (used for exporting snapshots) looking at mesh from x-axis
     lbm.graphics.set_camera_centered(0.0f, 0.0f, 0.0f, 2.0f);
-	//lbm.graphics.set_camera_centered(-40.0f, 20.0f, 78.0f, 1.25f);
 	lbm.run(0u, lbm_T);
 
 	while (lbm.get_t() <= lbm_T) {
-		if (lbm.graphics.next_frame(lbm_T, 10.0f)) lbm.graphics.write_frame();
+		if (lbm.graphics.next_frame(lbm_T, 10.0f)) lbm.graphics.write_frame_png(output_folder, false);
 
 		lbm.run(1u, lbm_T);
 
@@ -82,21 +101,21 @@ void main_setup() { // aerodynamics of the word cow; required extensions in defi
 
 		// Periodic VTK dumps of flow fields
 		if (t % vtk_interval == 0u) {
-			lbm.rho.write_device_to_vtk();   // density field :contentReference[oaicite:3]{index=3}
-			lbm.u.write_device_to_vtk();     // velocity field :contentReference[oaicite:4]{index=4}
-			lbm.flags.write_device_to_vtk(); // cell flags (solid/bc) :contentReference[oaicite:5]{index=5}
+			lbm.rho.write_device_to_vtk(output_folder);   // density field :contentReference[oaicite:3]{index=3}
+			lbm.u.write_device_to_vtk(output_folder);     // velocity field :contentReference[oaicite:4]{index=4}
+			lbm.flags.write_device_to_vtk(output_folder); // cell flags (solid/bc) :contentReference[oaicite:5]{index=5}
 
 #ifdef FORCE_FIELD
 			// Compute and export boundary force field (per solid cell)
-			lbm.update_force_field(); // :contentReference[oaicite:6]{index=6}
-			lbm.F.write_device_to_vtk();         // :contentReference[oaicite:7]{index=7}
+			lbm.update_force_field();                         // :contentReference[oaicite:6]{index=6}
+			lbm.F.write_device_to_vtk(output_folder);         // :contentReference[oaicite:7]{index=7}
 #endif
 		}
 
 		// Force integration + CSV logging
 		if (t % log_interval == 0u) {
 #ifdef FORCE_FIELD
-			lbm.update_force_field(); // ensure F is current :contentReference[oaicite:8]{index=8}
+			lbm.update_force_field();            // ensure F is current :contentReference[oaicite:8]{index=8}
 			lbm.F.read_from_device();            // :contentReference[oaicite:9]{index=9}
 
 			double Fx = 0.0, Fy = 0.0, Fz = 0.0;
@@ -113,7 +132,7 @@ void main_setup() { // aerodynamics of the word cow; required extensions in defi
 			const double Fy_si = (double)units.si_F((float)Fy);
 			const double Fz_si = (double)units.si_F((float)Fz);
 
-			append_file(get_exe_path() + "forces.csv",
+			append_file(output_folder + "forces.csv",
 				to_string(t) + "," + to_string(t_si) + "," +
 				to_string(Fx) + "," + to_string(Fy) + "," + to_string(Fz) + "," +
 				to_string(Fx_si) + "," + to_string(Fy_si) + "," + to_string(Fz_si) + "\n"
