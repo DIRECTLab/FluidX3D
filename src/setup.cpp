@@ -21,14 +21,76 @@ static inline void usage() {
 static std::string input_file;
 static std::string output_folder;
 static inline void parse_out_arguments() {
-    if (main_arguments.size() != 2) {
-        usage();
-    }
+    if (main_arguments.size() != 2) usage();
     input_file = main_arguments[0];
     output_folder = main_arguments[1];
+
+    // Ensure output_folder ends with '/'
+    if (!output_folder.empty() && output_folder.back() != '/' && output_folder.back() != '\\') {
+        output_folder.push_back('/');
+    }
 }
 
-void main_setup() { // aerodynamics of the word cow; required extensions in defines.hpp: FP16S, EQUILIBRIUM_BOUNDARIES, SUBGRID, FORCE_FIELD, INTERACTIVE_GRAPHICS or GRAPHICS
+
+static inline ulong idx3(const uint x, const uint y, const uint z,
+                        const uint Nx, const uint Ny) {
+    return (ulong)x + (ulong)Nx * ((ulong)y + (ulong)Ny * (ulong)z);
+}
+
+// Projected frontal area onto XZ plane by "first solid hit" per (x,z) ray marched from upstream (y=0) to downstream (y=Ny-1).
+// This avoids counting internal cavities / self-shadowing.
+static double compute_frontal_area_SI_first_hit(LBM& lbm, const double dx_si) {
+    const uint Nx = lbm.get_Nx(), Ny = lbm.get_Ny(), Nz = lbm.get_Nz();
+    const double dA = dx_si * dx_si;
+    double A = 0.0;
+
+    for (uint z = 0; z < Nz; ++z) {
+        for (uint x = 0; x < Nx; ++x) {
+            for (uint y = 0; y < Ny; ++y) {
+                const ulong n = idx3(x, y, z, Nx, Ny);
+                if (lbm.flags[n] == TYPE_S) { // first solid encountered along +Y
+                    A += dA;
+                    break;
+                }
+            }
+        }
+    }
+    return A;
+}
+
+// Estimate freestream speed U_inf (m/s) from a small upstream slab.
+// Reads u to host each call, so call it only at log cadence.
+static double estimate_Uinf_si(LBM& lbm) {
+    // Make sure flags are on host (solid mask), then read u to host.
+    // If flags are already on host, this is cheap.
+    lbm.u.read_from_device();
+
+    const uint Nx = lbm.get_Nx(), Ny = lbm.get_Ny(), Nz = lbm.get_Nz();
+    const uint y0 = (uint)(0.10 * (double)Ny);
+    const uint y1 = std::max(y0 + 1u, (uint)(0.15 * (double)Ny));
+    const uint x0 = (uint)(0.10 * (double)Nx);
+    const uint x1 = std::max(x0 + 1u, (uint)(0.90 * (double)Nx));
+    const uint z0 = (uint)(0.10 * (double)Nz);
+    const uint z1 = std::max(z0 + 1u, (uint)(0.90 * (double)Nz));
+
+    double sum_uy_lbm = 0.0;
+    ulong count = 0;
+    for (uint z = z0; z < z1; ++z) {
+        for (uint y = y0; y < y1; ++y) {
+            for (uint x = x0; x < x1; ++x) {
+                const ulong n = idx3(x, y, z, Nx, Ny);
+                if (lbm.flags[n] == TYPE_S) continue;
+                sum_uy_lbm += (double)lbm.u.y[n]; // flow assumed +Y
+                count++;
+            }
+        }
+    }
+    const double uy_lbm = (count > 0) ? (sum_uy_lbm / (double)count) : 0.0;
+    return (double)units.si_u((float)uy_lbm);
+}
+ 
+
+void main_setup() { // aerodynamics of a passed in stl file; required extensions in defines.hpp: FP16S, SUBGRID, FORCE_FIELD, INTERACTIVE_GRAPHICS or GRAPHICS
     parse_out_arguments();
 	// ################################################################## define simulation box size, viscosity and volume force ###################################################################
 	const uint3 lbm_N = resolution(float3(1.0f, 2.0f, 1.0f), 10000u);
@@ -65,10 +127,29 @@ void main_setup() { // aerodynamics of the word cow; required extensions in defi
 		uint x = 0u, y = 0u, z = 0u;
 		lbm.coordinates(n, x, y, z);
 
-		if (z == 0u) lbm.flags[n] = TYPE_S; // solid floor
+		//if (z == 0u) lbm.flags[n] = TYPE_S; // solid floor
 		if (lbm.flags[n] != TYPE_S) lbm.u.y[n] = lbm_u; // initialize y-velocity everywhere except in solid cells
 		if (x == 0u || x == Nx - 1u || y == 0u || y == Ny - 1u || z == Nz - 1u) lbm.flags[n] = TYPE_E; // inflow/outflow
 	});
+
+    // --- reference quantities for coefficients ---
+    const double rho_si = (double)si_rho;    // 1.225 kg/m^3 from your config
+    const double dx_si  = (double)units.si_x(1.0f); // meters per lattice cell
+
+    // IMPORTANT: flags were modified on device; pull them to host before computing A_ref on CPU.
+    lbm.flags.read_from_device();
+
+    // Compute frontal projected area A_ref (m^2) using first-hit ray marching (better than neighbor-face counting).
+    const double A_ref = compute_frontal_area_SI_first_hit(lbm, dx_si);
+
+ 
+
+    write_file(output_folder + "ref.txt",
+        "dx_si_m=" + to_string(dx_si, 9u) + "\n" +
+        "rho_si=" + to_string(rho_si, 6u) + "\n" +
+        "A_ref_m2=" + to_string(A_ref, 9u) + "\n" +
+        "NOTE=Uinf and q are computed per forces.csv row.\n"
+    );
 
 	// ####################################################################### run simulation, export images and data ##########################################################################
 	lbm.graphics.visualization_modes = VIS_FLAG_SURFACE | VIS_Q_CRITERION;
@@ -81,9 +162,9 @@ void main_setup() { // aerodynamics of the word cow; required extensions in defi
     if (log_interval < 1u) log_interval = 1u;
 
 	// CSV header (force time series). Use write_file/append helpers if you prefer.
-	write_file(output_folder + "forces.csv",
-		"t_lbm,t_si,Fx_lbm,Fy_lbm,Fz_lbm,Fx_siN,Fy_siN,Fz_siN\n"
-	);
+    write_file(output_folder + "forces.csv",
+        "t_lbm,t_si,Fx_lbm,Fy_lbm,Fz_lbm,Fx_siN,Fy_siN,Fz_siN,A_ref_m2,Uinf_mps,q_Pa,CD,CL\n"
+    );
 
 #if defined(GRAPHICS) && !defined(INTERACTIVE_GRAPHICS)
     float cam = 1.0f * (float)lbm.get_Nx();
@@ -131,11 +212,22 @@ void main_setup() { // aerodynamics of the word cow; required extensions in defi
 			const double Fy_si = (double)units.si_F((float)Fy);
 			const double Fz_si = (double)units.si_F((float)Fz);
 
-			append_file(output_folder + "forces.csv",
-				to_string(t) + "," + to_string(t_si) + "," +
-				to_string(Fx) + "," + to_string(Fy) + "," + to_string(Fz) + "," +
-				to_string(Fx_si) + "," + to_string(Fy_si) + "," + to_string(Fz_si) + "\n"
-			);
+            // Estimate actual freestream speed and compute dynamic pressure
+            const double Uinf_si = estimate_Uinf_si(lbm);     // m/s
+            const double q = 0.5 * rho_si * Uinf_si * Uinf_si; // Pa
+
+            // Coefficients. If you find sign is flipped, change Fy_si -> -Fy_si once and keep it consistent.
+            const double CD = (q > 0.0 && A_ref > 0.0) ? (Fy_si / (q * A_ref)) : 0.0; // drag along +Y (assumed)
+            const double CL = (q > 0.0 && A_ref > 0.0) ? (Fz_si / (q * A_ref)) : 0.0; // lift along +Z (assumed)
+ 
+
+            append_file(output_folder + "forces.csv",
+                to_string(t) + "," + to_string(t_si) + "," +
+                to_string(Fx) + "," + to_string(Fy) + "," + to_string(Fz) + "," +
+                to_string(Fx_si) + "," + to_string(Fy_si) + "," + to_string(Fz_si) + "," +
+                to_string(A_ref, 9u) + "," + to_string(Uinf_si, 9u) + "," + to_string(q, 9u) + "," +
+                to_string(CD, 9u) + "," + to_string(CL, 9u) + "\n"
+            );
 #endif
 		}
 	}
